@@ -57,7 +57,7 @@ class FirstSpikeTime(torch.autograd.Function):
     def backward(ctx, df_dts):
         s, s_alt, ts = ctx.saved_tensors
         # dts_ds = s * -1.#+ (1 - s) * -10  # torch.ones_like(s) * -1.  # s * -1
-        dts_ds = torch.ones_like(s) * -1.  # s_alt * -1
+        dts_ds = s_alt * -1  # torch.ones_like(s) * -1.  # s_alt * -1
         df_ds = df_dts * dts_ds
         return df_ds, None
 
