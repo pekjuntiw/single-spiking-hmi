@@ -17,7 +17,6 @@ import utils
 from utils import raster_plot, cerst_loss, msst_loss, get_target_spike_time, FirstSpikeTime, weight_to_conductance
 from dataset import TTFSSEMG, loader
 from model import SingleLayerSingleSpikeNet
-import copy
 from functools import partial
 
 """
@@ -93,7 +92,7 @@ def main():
     snapshots = [] if "snapshots" not in FLAGS.keys() else FLAGS["snapshots"]
     dataset_dir = 'sEMG_wrist/generated' if "dataset_dir" not in FLAGS.keys() else FLAGS["dataset_dir"]
     print(f'Using dataset from {dataset_dir}')
-    model_num = 310
+    model_num = 1
     model_dir = f'ttfs_semg/{model_num}'
     model_output_dir = f'{model_dir}/model'
     log_dir = f'{model_dir}/log'
@@ -146,7 +145,7 @@ def main():
     input_limit = FLAGS["input_limit"]
     v_mode = FLAGS["v_mode"]
     v_mode_param = FLAGS["v_mode_param"]
-    weight_scaling = FLAGS["weight_scaling"] * v_mode_param["weight_scaling_2"]
+    weight_scaling = FLAGS["weight_scaling"] * (v_mode_param["weight_scaling_2"] if v_mode else 1.)
     input_width = FLAGS["input_width"]
     nonideal_input_tau = FLAGS["nonideal_input_tau"]
 
@@ -182,7 +181,6 @@ def main():
         input_width=input_width, nonideal_input_tau=nonideal_input_tau
     )
     net = net.to(device)
-    net_initial = copy.deepcopy(net)
     optimizer = torch.optim.Adam(net.parameters(), lr=lr, weight_decay=l2_reg)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=decay_step, gamma=decay_rate)
 
@@ -257,13 +255,14 @@ def main():
         dataset.use_transform = True
 
         # get data in batches
-        for i, (fingerprint, label) in enumerate(
+        for i, (semg, label) in enumerate(
                 pbar := tqdm(loader(train_data_loader, device), bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
-                             total=train_batch_per_epoch, desc="Training", ascii=" >>>>=")):
+                             total=train_batch_per_epoch, desc="Training", ascii=" >>>>=")
+        ):
             optimizer.zero_grad()
 
             # forward pass
-            output = net(fingerprint.float())
+            output = net(semg.float())
             # output.shape = [timestep, batch_size, n_out]
             # take output neuron that fires first as the classification result
             results = FirstSpikeTime.apply(output, dt)
@@ -343,7 +342,7 @@ def main():
 
                 fig, ax = plt.subplots(2, 1)
                 for b in bumps:
-                    ax[b[1]].axvline(b[0] / train_batch_per_epoch, color="k", linestyle=":", alpha=0.4)
+                    ax[0].axvline(b[0] / train_batch_per_epoch, color="k", linestyle=":", alpha=0.4)
                 l = ax[0].plot(np.arange(train_times) / train_batch_per_epoch, [s[0] for s in fc1_stats_step], '-.')
                 ax[0].plot(np.arange(train_times) / train_batch_per_epoch, [s[3] for s in fc1_stats_step], color=l[0].get_color())
                 ax[0].fill_between(np.arange(train_times) / train_batch_per_epoch, [s[2] for s in fc1_stats_step], [s[4] for s in fc1_stats_step], alpha=0.4)
@@ -373,11 +372,11 @@ def main():
             val_labels_per_batch = []
 
             # get data in batches
-            for fingerprint, label in tqdm(loader(test_data_loader, device),
+            for semg, label in tqdm(loader(test_data_loader, device),
                                            bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}", total=test_batch_per_epoch,
                                            desc="Testing", ascii=" >>>>="):
                 # forward pass
-                output = net(fingerprint.float())
+                output = net(semg.float())
                 # take output neuron that fires first as the classification result
                 results = FirstSpikeTime.apply(output, dt)
                 val_spike_times_per_batch.append(results.clone().detach())
@@ -489,10 +488,10 @@ def main():
         spikes_per_sample = []
 
         # get data in batches
-        for fingerprint, label in tqdm(loader(test_data_loader, device), bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
+        for semg, label in tqdm(loader(test_data_loader, device), bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
                                        total=test_batch_per_epoch, desc="Testing"):
             # forward pass
-            output = net(fingerprint.float())
+            output = net(semg.float())
             results = FirstSpikeTime.apply(output, dt)
             val_spike_times_per_batch.append(results.clone().detach())
             val_labels_per_batch.append(label.clone().detach())
@@ -519,12 +518,12 @@ def main():
     # plot some figures
     net.eval()
     with torch.no_grad():
-        fingerprint, label = test_dataset[1]
-        fingerprint = torch.unsqueeze(fingerprint, dim=0)
-        fingerprint = fingerprint.to(device)
+        semg, label = test_dataset[1]
+        semg = torch.unsqueeze(semg, dim=0)
+        semg = semg.to(device)
 
         # forward pass
-        net(fingerprint.float())
+        net(semg.float())
 
         # get model dynamical states
         v_evol_1 = net.v_1.cpu().numpy()
