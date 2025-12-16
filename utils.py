@@ -57,19 +57,9 @@ class FirstSpikeTime(torch.autograd.Function):
     def backward(ctx, df_dts):
         s, s_alt, ts = ctx.saved_tensors
         # dts_ds = s * -1.#+ (1 - s) * -10  # torch.ones_like(s) * -1.  # s * -1
-        dts_ds = s_alt * -1  # torch.ones_like(s) * -1.  # s_alt * -1
+        dts_ds = s_alt * -1 #torch.ones_like(s) * -1.  # s_alt * -1
         df_ds = df_dts * dts_ds
         return df_ds, None
-
-
-def get_spike_time(spikes: torch.Tensor, dt: float):
-    assert torch.max(torch.sum(spikes, dim=-1)) <= 1., f">1 spikes found for some neuron(s):\n{spikes.shape}\n{spikes}"
-    times = torch.sum(
-        spikes * (torch.arange(spikes.shape[-1], device=spikes.device, requires_grad=True, dtype=torch.float) + 1),
-        dim=-1) - 1
-    times = torch.where(times < 0., spikes.shape[-1], times)
-    times *= dt
-    return times
 
 
 def get_target_spike_time(labels: torch.Tensor, n_classes: int, true_time: float, false_time: float):
